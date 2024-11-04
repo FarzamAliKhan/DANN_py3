@@ -16,10 +16,10 @@ target_dataset_name = 'mnist_m'
 source_image_root = os.path.join('dataset', source_dataset_name)
 target_image_root = os.path.join('dataset', target_dataset_name)
 model_root = 'models'
-cuda = True
+cuda = False
 cudnn.benchmark = True
 lr = 1e-3
-batch_size = 128
+batch_size = 32
 image_size = 28
 n_epoch = 100
 
@@ -87,73 +87,77 @@ if cuda:
 for p in my_net.parameters():
     p.requires_grad = True
 
-# training
-best_accu_t = 0.0
-for epoch in range(n_epoch):
+    
+# Add the following guard
+if __name__ == '__main__':
 
-    len_dataloader = min(len(dataloader_source), len(dataloader_target))
-    data_source_iter = iter(dataloader_source)
-    data_target_iter = iter(dataloader_target)
+    # torch.cuda.empty_cache()
+    # training
+    best_accu_t = 0.0
+    for epoch in range(n_epoch):
 
-    for i in range(len_dataloader):
+        len_dataloader = min(len(dataloader_source), len(dataloader_target))
+        data_source_iter = iter(dataloader_source)
+        data_target_iter = iter(dataloader_target)
 
-        p = float(i + epoch * len_dataloader) / n_epoch / len_dataloader
-        alpha = 2. / (1. + np.exp(-10 * p)) - 1
+        for i in range(len_dataloader):
 
-        # training model using source data
-        data_source = data_source_iter.next()
-        s_img, s_label = data_source
+            p = float(i + epoch * len_dataloader) / n_epoch / len_dataloader
+            alpha = 2. / (1. + np.exp(-10 * p)) - 1
 
-        my_net.zero_grad()
-        batch_size = len(s_label)
+            # training model using source data
+            data_source = data_source_iter.next()
+            s_img, s_label = data_source
 
-        domain_label = torch.zeros(batch_size).long()
+            my_net.zero_grad()
+            batch_size = len(s_label)
 
-        if cuda:
-            s_img = s_img.cuda()
-            s_label = s_label.cuda()
-            domain_label = domain_label.cuda()
+            domain_label = torch.zeros(batch_size).long()
 
+            if cuda:
+                s_img = s_img.cuda()
+                s_label = s_label.cuda()
+                domain_label = domain_label.cuda()
 
-        class_output, domain_output = my_net(input_data=s_img, alpha=alpha)
-        err_s_label = loss_class(class_output, s_label)
-        err_s_domain = loss_domain(domain_output, domain_label)
+            class_output, domain_output = my_net(input_data=s_img, alpha=alpha)
+            err_s_label = loss_class(class_output, s_label)
+            err_s_domain = loss_domain(domain_output, domain_label)
 
-        # training model using target data
-        data_target = data_target_iter.next()
-        t_img, _ = data_target
+            # training model using target data
+            data_target = data_target_iter.next()
+            t_img, _ = data_target
 
-        batch_size = len(t_img)
+            batch_size = len(t_img)
 
-        domain_label = torch.ones(batch_size).long()
+            domain_label = torch.ones(batch_size).long()
 
-        if cuda:
-            t_img = t_img.cuda()
-            domain_label = domain_label.cuda()
+            if cuda:
+                t_img = t_img.cuda()
+                domain_label = domain_label.cuda()
 
-        _, domain_output = my_net(input_data=t_img, alpha=alpha)
-        err_t_domain = loss_domain(domain_output, domain_label)
-        err = err_t_domain + err_s_domain + err_s_label
-        err.backward()
-        optimizer.step()
+            _, domain_output = my_net(input_data=t_img, alpha=alpha)
+            err_t_domain = loss_domain(domain_output, domain_label)
+            err = err_t_domain + err_s_domain + err_s_label
+            err.backward()
+            optimizer.step()
 
-        sys.stdout.write('\r epoch: %d, [iter: %d / all %d], err_s_label: %f, err_s_domain: %f, err_t_domain: %f' \
-              % (epoch, i + 1, len_dataloader, err_s_label.data.cpu().numpy(),
-                 err_s_domain.data.cpu().numpy(), err_t_domain.data.cpu().item()))
-        sys.stdout.flush()
-        torch.save(my_net, '{0}/mnist_mnistm_model_epoch_current.pth'.format(model_root))
+            sys.stdout.write('\r epoch: %d, [iter: %d / all %d], err_s_label: %f, err_s_domain: %f, err_t_domain: %f' \
+                  % (epoch, i + 1, len_dataloader, err_s_label.data.cpu().numpy(),
+                     err_s_domain.data.cpu().numpy(), err_t_domain.data.cpu().item()))
+            sys.stdout.flush()
+            torch.save(my_net, '{0}/mnist_mnistm_model_epoch_current.pth'.format(model_root))
 
-    print('\n')
-    accu_s = test(source_dataset_name)
-    print('Accuracy of the %s dataset: %f' % ('mnist', accu_s))
-    accu_t = test(target_dataset_name)
-    print('Accuracy of the %s dataset: %f\n' % ('mnist_m', accu_t))
-    if accu_t > best_accu_t:
-        best_accu_s = accu_s
-        best_accu_t = accu_t
-        torch.save(my_net, '{0}/mnist_mnistm_model_epoch_best.pth'.format(model_root))
+        print('\n')
+        accu_s = test(source_dataset_name)
+        print('Accuracy of the %s dataset: %f' % ('mnist', accu_s))
+        accu_t = test(target_dataset_name)
+        print('Accuracy of the %s dataset: %f\n' % ('mnist_m', accu_t))
+        if accu_t > best_accu_t:
+            best_accu_s = accu_s
+            best_accu_t = accu_t
+            torch.save(my_net, '{0}/mnist_mnistm_model_epoch_best.pth'.format(model_root))
 
-print('============ Summary ============= \n')
-print('Accuracy of the %s dataset: %f' % ('mnist', best_accu_s))
-print('Accuracy of the %s dataset: %f' % ('mnist_m', best_accu_t))
-print('Corresponding model was save in ' + model_root + '/mnist_mnistm_model_epoch_best.pth')
+    print('============ Summary ============= \n')
+    print('Accuracy of the %s dataset: %f' % ('mnist', best_accu_s))
+    print('Accuracy of the %s dataset: %f' % ('mnist_m', best_accu_t))
+    print('Corresponding model was save in ' + model_root + '/mnist_mnistm_model_epoch_best.pth')

@@ -7,3 +7,4 @@ dataset/MNIST
 *.txt
 *.png
 
+venv/
